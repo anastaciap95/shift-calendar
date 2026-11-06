@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Shift calendar</title>
+<style>
+:root{
+  --bg:#ffffff; --fg:#1f2328; --muted:#656d76; --line:#c8c8c8; --card:#f6f8fa;
+  --a:#FFF2CC; --m:#E2EFDA; --we:#FCE4D6; --hol:#FF9999; --holfg:#c00000; --today:#1f77d0;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#16181c; --fg:#e6e6e6; --muted:#9aa4ae; --line:#444; --card:#1f2228;
+    --a:#5a4b1e; --m:#27442a; --we:#5a3a2e; --hol:#8c2f2f; --holfg:#ffb3b3; --today:#5aaefc;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#16181c; --fg:#e6e6e6; --muted:#9aa4ae; --line:#444; --card:#1f2228;
+  --a:#5a4b1e; --m:#27442a; --we:#5a3a2e; --hol:#8c2f2f; --holfg:#ffb3b3; --today:#5aaefc;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;padding:12px;background:var(--bg);color:var(--fg);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+.wrap{max-width:900px;margin:0 auto}
+.top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+h1{font-size:1.4rem;margin:8px 0}
+h3{margin:18px 0 6px;font-size:1rem}
+.btn{display:inline-block;padding:8px 12px;border:1px solid var(--line);border-radius:8px;
+  color:inherit;background:transparent;font:inherit;cursor:pointer}
+.btn:hover{border-color:var(--today)}
+.nav{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0 10px}
+select,input[type=date],textarea{padding:8px;border:1px solid var(--line);border-radius:8px;
+  background:var(--bg);color:var(--fg);font:inherit;max-width:100%}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);border-left:1px solid var(--line);
+  border-top:1px solid var(--line);touch-action:pan-y}
+.dow{font-weight:700;text-align:center;padding:6px 0;border-right:1px solid var(--line);
+  border-bottom:1px solid var(--line)}
+.cell{min-height:72px;padding:4px 6px;border-right:1px solid var(--line);
+  border-bottom:1px solid var(--line);display:flex;flex-direction:column;justify-content:space-between}
+.cell .n{text-align:right;font-weight:700}
+.cell .s{font-weight:700;font-size:1.05rem}
+.cell.a{background:var(--a)} .cell.m{background:var(--m)} .cell.we{background:var(--we)}
+.cell.hol{background:var(--hol)} .cell.hol .n{color:var(--holfg)}
+.cell.today{box-shadow:inset 0 0 0 3px var(--today)}
+.cell.today .n{color:var(--today)}
+.hl{margin:6px 0;padding-left:18px}
+.hl li{color:var(--holfg)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 14px;margin:14px 0;font-size:.9rem}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:18px;height:18px;border:1px solid var(--line);border-radius:3px;display:inline-block}
+details{margin-top:18px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+summary{cursor:pointer;font-weight:600}
+.field{margin:12px 0;display:flex;flex-direction:column;gap:4px}
+.field label{font-size:.9rem;color:var(--muted)}
+.field textarea{min-height:80px;width:100%}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.msg{color:var(--muted);font-size:.9rem}
+@media (max-width:600px){
+  .cell{min-height:56px;padding:3px 4px}
+  h1{font-size:1.15rem}
+  .cell .s{font-size:.95rem}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="app"></div>
+  <div id="settings"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ───────────── Fixed settings ─────────────
+  var LET = { A: "Α", M: "Π", N: "Ν" };   // Greek letters: afternoon, morning, νοσηλείες
+  var BLOCK_WEEKS = 2;                      // morning/afternoon alternate every 2 weeks
+  var DEFAULTS = { refMorning: "2026-11-09", refN: "2026-11-02", extra: "" };
+  var MIN_Y = 1900, MAX_Y = 2099;
+
+  var T = {
+    en: {
+      days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+      months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+      abbr: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+      today: "Today", prev: "‹ Prev", next: "Next ›",
+      afternoon: "Afternoon", morning: "Morning", nosileies: "Inpatient care (weekend)",
+      holiday: "Public holiday", holidays: "Holidays this month", none: "No holidays",
+      settings: "Settings",
+      refMorning: "A Monday that starts a morning (Π) block",
+      refN: "A Monday whose weekend is a Ν weekend (repeats every 2 weeks)",
+      extra: "Extra days off – one per line: YYYY-MM-DD name",
+      save: "Save", reset: "Reset", saved: "Saved ✓", bad: "Please enter valid dates.",
+      note: "Settings are stored on this device only."
+    },
+    el: {
+      days: ["Δευ", "Τρί", "Τετ", "Πέμ", "Παρ", "Σάβ", "Κυρ"],
+      months: ["Ιανουάριος", "Φεβρουάριος", "Μάρτιος", "Απρίλιος", "Μάιος", "Ιούνιος", "Ιούλιος", "Αύγουστος", "Σεπτέμβριος", "Οκτώβριος", "Νοέμβριος", "Δεκέμβριος"],
+      abbr: ["Ιαν", "Φεβ", "Μαρ", "Απρ", "Μαΐ", "Ιουν", "Ιουλ", "Αυγ", "Σεπ", "Οκτ", "Νοε", "Δεκ"],
+      today: "Σήμερα", prev: "‹ Προηγ.", next: "Επόμ. ›",
+      afternoon: "Απογευματινή", morning: "Πρωινή", nosileies: "Νοσηλείες (Σαββατοκύριακο)",
+      holiday: "Αργία", holidays: "Αργίες του μήνα", none: "Καμία αργία",
+      settings: "Ρυθμίσεις",
+      refMorning: "Μια Δευτέρα που ξεκινά πρωινό (Π) μπλοκ",
+      refN: "Μια Δευτέρα της οποίας το Σαββατοκύριακο είναι Ν (επαναλαμβάνεται ανά 2 εβδομάδες)",
+      extra: "Επιπλέον αργίες – μία ανά γραμμή: YYYY-MM-DD όνομα",
+      save: "Αποθήκευση", reset: "Επαναφορά", saved: "Αποθηκεύτηκε ✓", bad: "Δώστε έγκυρες ημερομηνίες.",
+      note: "Οι ρυθμίσεις αποθηκεύονται μόνο σε αυτή τη συσκευή."
+    }
+  };
+
+  // ───────────── Storage (per device, always guarded) ─────────────
+  var store = {
+    get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+    del: function (k) { try { localStorage.removeItem(k); } catch (e) {} }
+  };
+
+  var lang = store.get("shiftcal-lang");
+  if (lang !== "en" && lang !== "el") {
+    lang = (navigator.language || "").toLowerCase().indexOf("el") === 0 ? "el" : "en";
+  }
+
+  // ───────────── Date helpers (days since epoch, UTC-safe) ─────────────
+  var DAY = 864e5;
+  function isoToDay(s) {
+    var p = s.split("-").map(Number);
+    return Date.UTC(p[0], p[1] - 1, p[2]) / DAY;
+  }
+  function validISO(s) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+    var p = s.split("-").map(Number);
+    var d = new Date(Date.UTC(p[0], p[1] - 1, p[2]));
+    return d.getUTCFullYear() === p[0] && d.getUTCMonth() === p[1] - 1 && d.getUTCDate() === p[2];
+  }
+  function dayToISO(n) {
+    var d = new Date(n * DAY);
+    return d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate());
+  }
+  function mondayOf(n) {
+    var dow = (new Date(n * DAY).getUTCDay() + 6) % 7;
+    return n - dow;
+  }
+  function pad(n) { return String(n).length < 2 ? "0" + n : String(n); }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function mod(a, b) { return ((a % b) + b) % b; }
+
+  // ───────────── Config ─────────────
+  var cfg = loadCfg();
+  function loadCfg() {
+    var c = { refMorning: DEFAULTS.refMorning, refN: DEFAULTS.refN, extra: DEFAULTS.extra };
+    try {
+      var raw = store.get("shiftcal-cfg");
+      if (raw) {
+        var o = JSON.parse(raw);
+        if (o && validISO(o.refMorning)) c.refMorning = o.refMorning;
+        if (o && validISO(o.refN)) c.refN = o.refN;
+        if (o && typeof o.extra === "string") c.extra = o.extra;
+      }
+    } catch (e) {}
+    return c;
+  }
+  var holCache = {};
+  function extraMap() {
+    var map = {};
+    cfg.extra.split("\n").forEach(function (line) {
+      var m = /^\s*(\d{4}-\d{2}-\d{2})\s*(.*)$/.exec(line);
+      if (m && validISO(m[1])) {
+        var nm = m[2].trim() || "—";
+        map[isoToDay(m[1])] = { en: nm, el: nm };
+      }
+    });
+    return map;
+  }
+
+  // ───────────── Shift rules ─────────────
+  function weekShift(monday) {
+    var w = Math.floor((monday - isoToDay(cfg.refMorning)) / 7);
+    return mod(Math.floor(w / BLOCK_WEEKS), 2) === 0 ? LET.M : LET.A;
+  }
+  function hasN(monday) {
+    return mod(Math.floor((monday - isoToDay(cfg.refN)) / 7), 2) === 0;
+  }
+
+  // ───────────── Greek holidays ─────────────
+  function orthodoxEaster(y) {
+    var a = y % 4, b = y % 7, c = y % 19;
+    var d = (19 * c + 15) % 30;
+    var e = (2 * a + 4 * b - d + 34) % 7;
+    var s = d + e + 114;
+    var month = Math.floor(s / 31), day = (s % 31) + 1;
+    return Date.UTC(y, month - 1, day) / DAY + 13; // Julian → Gregorian (1900–2099)
+  }
+  function holidaysOf(y) {
+    if (holCache[y]) return holCache[y];
+    var e = orthodoxEaster(y), h = {};
+    function fix(m, d, en, el) { h[Date.UTC(y, m - 1, d) / DAY] = { en: en, el: el }; }
+    fix(1, 1, "New Year’s Day", "Πρωτοχρονιά");
+    fix(1, 6, "Epiphany", "Θεοφάνεια");
+    fix(3, 25, "Independence Day", "25η Μαρτίου");
+    fix(5, 1, "Labour Day", "Πρωτομαγιά");
+    fix(8, 15, "Assumption of Mary", "Δεκαπενταύγουστος");
+    fix(10, 28, "Ochi Day", "28η Οκτωβρίου");
+    fix(12, 25, "Christmas Day", "Χριστούγεννα");
+    fix(12, 26, "Synaxis of the Theotokos", "Σύναξη της Θεοτόκου");
+    h[e - 48] = { en: "Clean Monday", el: "Καθαρά Δευτέρα" };
+    h[e - 2] = { en: "Good Friday", el: "Μεγάλη Παρασκευή" };
+    h[e] = { en: "Orthodox Easter", el: "Κυριακή του Πάσχα" };
+    h[e + 1] = { en: "Easter Monday", el: "Δευτέρα του Πάσχα" };
+    h[e + 50] = { en: "Whit Monday", el: "Αγίου Πνεύματος" };
+    var ex = extraMap();
+    for (var k in ex) h[k] = ex[k];
+    holCache[y] = h;
+    return h;
+  }
+
+  // ───────────── Navigation (hash like #2026-11) ─────────────
+  var app = document.getElementById("app");
+  var view = readHash();
+
+  function readHash() {
+    var mt = /^#(\d{4})-(\d{2})$/.exec(location.hash);
+    if (mt) {
+      var y = +mt[1], m = +mt[2] - 1;
+      if (y >= MIN_Y && y <= MAX_Y && m >= 0 && m < 12) return { y: y, m: m };
+    }
+    var n = new Date();
+    return { y: n.getFullYear(), m: n.getMonth() };
+  }
+  function go(y, m) {
+    var idx = y * 12 + m;
+    y = Math.floor(idx / 12); m = mod(idx, 12);
+    if (y < MIN_Y || y > MAX_Y) return;
+    var h = "#" + y + "-" + pad(m + 1);
+    if (location.hash === h) { view = { y: y, m: m }; render(); }
+    else location.hash = h;
+  }
+  window.addEventListener("hashchange", function () { view = readHash(); render(); });
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) render(); });
+
+  // ───────────── Render ─────────────
+  function render() {
+    var t = T[lang], y = view.y, m = view.m;
+    document.documentElement.lang = lang;
+    document.title = t.months[m] + " " + y;
+
+    var now = new Date();
+    var todayN = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / DAY;
+    var first = Date.UTC(y, m, 1) / DAY;
+    var dim = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+    var start = mondayOf(first);
+    var weeks = Math.ceil((first - start + dim) / 7);
+    var hol = holidaysOf(y);
+
+    var h = "";
+    h += '<div class="top"><h1>' + t.months[m] + " " + y + "</h1>" +
+         '<button class="btn" data-act="lang">' + (lang === "en" ? "ΕΛ" : "EN") + "</button></div>";
+
+    h += '<div class="nav">' +
+         '<button class="btn" data-act="prev">' + t.prev + "</button>" +
+         '<button class="btn" data-act="today">' + t.today + "</button>" +
+         '<button class="btn" data-act="next">' + t.next + "</button>" +
+         '<select id="selM" aria-label="Month">';
+    for (var i = 0; i < 12; i++) h += '<option value="' + i + '"' + (i === m ? " selected" : "") + ">" + t.months[i] + "</option>";
+    h += '</select><select id="selY" aria-label="Year">';
+    for (var yy = Math.max(MIN_Y, y - 5); yy <= Math.min(MAX_Y, y + 5); yy++) {
+      h += '<option value="' + yy + '"' + (yy === y ? " selected" : "") + ">" + yy + "</option>";
+    }
+    h += "</select></div>";
+
+    h += '<div class="grid" id="grid">';
+    t.days.forEach(function (d) { h += '<div class="dow">' + d + "</div>"; });
+
+    for (var w = 0; w < weeks; w++) {
+      var mon = start + 7 * w;
+      var sh = weekShift(mon);
+      var wcls = sh === LET.M ? "m" : "a";
+      for (var j = 0; j < 7; j++) {
+        var dn = mon + j, d = new Date(dn * DAY), we = j >= 5;
+        if (d.getUTCMonth() !== m) {
+          h += '<div class="cell ' + (we ? "we" : wcls) + '"></div>';
+          continue;
+        }
+        var ho = hol[dn];
+        var cls = "cell " + (ho ? "hol" : we ? "we" : wcls) + (dn === todayN ? " today" : "");
+        var letter = !we ? sh : (hasN(mon) ? LET.N : "");
+        var title = ho ? ' title="' + esc(ho[lang]) + '"' : "";
+        h += '<div class="' + cls + '"' + title + '><div class="n">' + d.getUTCDate() +
+             '</div><div class="s">' + letter + "</div></div>";
+      }
+    }
+    h += "</div>";
+
+    // Holidays of the month
+    h += "<h3>" + t.holidays + "</h3>";
+    var items = "";
+    for (var k = 1; k <= dim; k++) {
+      var hh = hol[first + k - 1];
+      if (hh) items += "<li>" + k + " " + t.abbr[m] + " – " + esc(hh[lang]) + "</li>";
+    }
+    h += items ? '<ul class="hl">' + items + "</ul>" : '<p class="msg">' + t.none + "</p>";
+
+    // Legend
+    h += '<div class="legend">' +
+         '<span><i class="sw" style="background:var(--a)"></i>' + LET.A + " = " + t.afternoon + "</span>" +
+         '<span><i class="sw" style="background:var(--m)"></i>' + LET.M + " = " + t.morning + "</span>" +
+         '<span><i class="sw" style="background:var(--we)"></i>' + LET.N + " = " + t.nosileies + "</span>" +
+         '<span><i class="sw" style="background:var(--hol)"></i>' + t.holiday + "</span>" +
+         '<span><i class="sw" style="box-shadow:inset 0 0 0 3px var(--today)"></i>' + t.today + "</span>" +
+         "</div>";
+
+    app.innerHTML = h;
+  }
+
+  // ───────────── Events ─────────────
+  app.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-act]");
+    if (!b) return;
+    var a = b.getAttribute("data-act");
+    if (a === "prev") go(view.y, view.m - 1);
+    else if (a === "next") go(view.y, view.m + 1);
+    else if (a === "today") { var n = new Date(); go(n.getFullYear(), n.getMonth()); }
+    else if (a === "lang") {
+      lang = lang === "en" ? "el" : "en";
+      store.set("shiftcal-lang", lang);
+      render(); renderSettings();
+    }
+  });
+  app.addEventListener("change", function (e) {
+    if (e.target.id === "selM" || e.target.id === "selY") {
+      go(+document.getElementById("selY").value, +document.getElementById("selM").value);
+    }
+  });
+
+  // Swipe left/right to change month on touch screens
+  var sx = 0, sy = 0;
+  app.addEventListener("touchstart", function (e) {
+    if (!e.touches.length) return;
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+  }, { passive: true });
+  app.addEventListener("touchend", function (e) {
+    if (!e.changedTouches.length || !e.target.closest("#grid")) return;
+    var dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy)) go(view.y, view.m + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+
+  // ───────────── Settings panel ─────────────
+  var settingsEl = document.getElementById("settings");
+  function renderSettings() {
+    var t = T[lang];
+    var wasOpen = !!(settingsEl.querySelector("details") && settingsEl.querySelector("details").open);
+    settingsEl.innerHTML =
+      "<details" + (wasOpen ? " open" : "") + "><summary>" + t.settings + "</summary>" +
+      '<div class="field"><label for="inM">' + t.refMorning + '</label><input type="date" id="inM" value="' + cfg.refMorning + '"></div>' +
+      '<div class="field"><label for="inN">' + t.refN + '</label><input type="date" id="inN" value="' + cfg.refN + '"></div>' +
+      '<div class="field"><label for="inX">' + t.extra + '</label><textarea id="inX" placeholder="2026-12-24 Christmas Eve">' + esc(cfg.extra) + "</textarea></div>" +
+      '<div class="row"><button class="btn" id="btnSave">' + t.save + '</button>' +
+      '<button class="btn" id="btnReset">' + t.reset + '</button><span class="msg" id="setMsg"></span></div>' +
+      '<p class="msg">' + t.note + "</p></details>";
+  }
+  settingsEl.addEventListener("click", function (e) {
+    var t = T[lang], msg = document.getElementById("setMsg");
+    if (e.target.id === "btnSave") {
+      var m = document.getElementById("inM").value, n = document.getElementById("inN").value;
+      if (!validISO(m) || !validISO(n)) { msg.textContent = t.bad; return; }
+      cfg = {
+        refMorning: dayToISO(mondayOf(isoToDay(m))),
+        refN: dayToISO(mondayOf(isoToDay(n))),
+        extra: document.getElementById("inX").value
+      };
+      store.set("shiftcal-cfg", JSON.stringify(cfg));
+      holCache = {};
+      render(); renderSettings();
+      document.querySelector("#settings details").open = true;
+      document.getElementById("setMsg").textContent = t.saved;
+    } else if (e.target.id === "btnReset") {
+      store.del("shiftcal-cfg");
+      cfg = loadCfg();
+      holCache = {};
+      render(); renderSettings();
+      document.querySelector("#settings details").open = true;
+    }
+  });
+
+  render();
+  renderSettings();
+})();
+</script>
+</body>
+</html>
