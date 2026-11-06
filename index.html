@@ -47,6 +47,7 @@ select,input[type=date],textarea{padding:8px;border:1px solid var(--line);border
 .cell .s{font-weight:700;font-size:1.05rem}
 .cell.a{background:var(--a)} .cell.m{background:var(--m)} .cell.we{background:var(--we)}
 .cell.hol{background:var(--hol)} .cell.hol .n{color:var(--holfg)}
+.cell.empty{background:var(--bg)}
 .cell.today{box-shadow:inset 0 0 0 3px var(--today)}
 .cell.today .n{color:var(--today)}
 .hl{margin:6px 0;padding-left:18px}
@@ -288,7 +289,7 @@ summary{cursor:pointer;font-weight:600}
       for (var j = 0; j < 7; j++) {
         var dn = mon + j, d = new Date(dn * DAY), we = j >= 5;
         if (d.getUTCMonth() !== m) {
-          h += '<div class="cell ' + (we ? "we" : wcls) + '"></div>';
+          h += '<div class="cell empty"></div>';
           continue;
         }
         var ho = hol[dn];
